@@ -1,0 +1,13 @@
+wheel
+setuptools
+twine
+notebook
+jupyter_contrib_nbextensions
+jupyter_nbextensions_configurator
+transformers
+torch
+datasets
+tqdm
+sacrebleu
+accelerate
+peft
