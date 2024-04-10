@@ -1,1 +1,1 @@
-from datainfluence import inflencefunction
+from data_analyze_tool import AnalyzeModel

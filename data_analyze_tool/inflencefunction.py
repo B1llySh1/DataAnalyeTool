@@ -63,7 +63,7 @@ def calculate_influence_base_on_metric(base_score, current_score, metric):
     return influence
         
 
-class InfluenceAnalyze():
+class AnalyzeModel():
     def __init__(self, model, X, y, task, metric=None):
         self.model = model
         self.X = X
