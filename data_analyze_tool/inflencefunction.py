@@ -37,14 +37,16 @@ class DataAnalyzer():
     ## Usage:
     Give the model, X data, y data (target data). And choose the task you are performing (Regression, Classification)
 
-    Optional: Provide your own test sets (X_test, y-test), and set test_set=Ture to enable analysis base on test set, or if test_set not provided 
+    ### Optional: Provide your own test sets (X_test, y-test), and set test_set=Ture to enable analysis base on test set, or if test_set not provided 
     the function will automatically split the data into train test base on split (default=0.1)
+
+    If n_cores set to > 0, then we can utilze muti-threading for computing LOO model retraining. This will make computing LOO data influence on the whole data feasible.
 
     Different Metrics are also availbale for different tasks
 
     ```python
     # Example
-    dataAnalyzer = DataAnalyzer(random_forest_pipeline, X, y, task="classification", test_set=True, metric="f1")
+    dataAnalyzer = DataAnalyzer(random_forest_pipeline, X, y, task="classification", test_set=True, metric="f1", n_cores=8)
     ```
 
     ## Functions:
@@ -61,6 +63,10 @@ class DataAnalyzer():
 
     # This compute the data influence for the data with the given method
     dataAnalyzer.CalculateInfluence(method='shapley', num_shuffles=5, threshold=0.98, stat=True)
+
+    # This compute the data influence using LOO
+    # By setting n_random_row = -1, the function will compute all data influences, if n_cores are also set above 1, then it will use multi-thread function
+    dataAnalyzer.CalculateInfluence(method='LOO', n_random_row=-1)
 
     # This prints the stat of the influences that are previously computed
     dataAnalyzer.PrintInfluence()
