@@ -27,6 +27,10 @@ from scipy.stats import skew, ks_2samp # Kolmogorov-Smirnov Test
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, mean_squared_error, mean_absolute_error, r2_score \
                             , precision_recall_fscore_support, log_loss
 
+from multiprocessing import Pool
+from functools import partial
+from model_training import calculate_loo_influence_parallel
+
 class DataAnalyzer():
     """
     # A data analyze tool to analyze data given a model.
@@ -68,7 +72,7 @@ class DataAnalyzer():
 
     More help: use .help() function
     """
-    def __init__(self, model, X, y, task, X_test=None, y_test=None, test_set=False, split=0.1, metric=None, seed=42):
+    def __init__(self, model, X, y, task, X_test=None, y_test=None, test_set=False, split=0.1, metric=None, seed=42, n_cores=-1):
         self.model = model
         self.X = X
         self.y = y
@@ -84,6 +88,7 @@ class DataAnalyzer():
         self.data_influences = np.zeros(len(X))
         self.feature_influences = None
         self.influence_method = None
+
 
         self.supported_tasks = ["regression", "classification", "probabilities"]
         self.task = task
@@ -122,6 +127,11 @@ class DataAnalyzer():
 
         print(f"Task: {self.task}, using metric: {self.metric}")
         print(f"Base score: {self.base_score}")
+
+        self.n_cores = n_cores
+
+        if self.n_cores > 0:
+            print("Using multi threads for computing data influence")
     
     def help(self):
         print("This calculate Influence for data")
@@ -175,10 +185,8 @@ class DataAnalyzer():
             plt.title('Distribution')
             plt.xlabel(X.columns[self.feature_influences.argmin()])
             plt.ylabel('Frequency')
-            plt.show()
+            plt.show() 
             
-            
-
     def PrintInfluence(self):
         """
         This function prints out the stats for computed data influences
@@ -186,6 +194,9 @@ class DataAnalyzer():
         if self.influence_method:
             print("The data last used:", self.influence_method)
             print(self.data_influences)
+            negative_size = (self.data_influences < 0).sum()
+            print(f"Percentage of negative influence data points in data: {negative_size/self.X.shape[0] *100 :.2f}%")
+            
             print("Average influence:", self.data_influences.mean())
             if self.data_influences.min() >= 0:
                 print("All data have positive influence!")
@@ -205,7 +216,10 @@ class DataAnalyzer():
         """
         n_random_row = len(self.X) if n_random_row > len(self.X) or n_random_row < 0 else n_random_row
         if method == 'LOO':
-            self.LOOinfluence(n_random_row=n_random_row, seed=seed, stat=stat)
+            if self.n_cores > 0 and n_random_row == len(self.X):
+                self.LOOinfluence_parallel(stat=stat)
+            else:
+                self.LOOinfluence(n_random_row=n_random_row, seed=seed, stat=stat)
         elif method == 'shapley':
             self.shapley_influence(num_shuffles=num_shuffles, threshold=threshold, seed=seed, stat=stat)
         else:
@@ -218,11 +232,14 @@ class DataAnalyzer():
         y = self.y
         model = self.model
 
-        print("Calculating data influence using Leave One Out")
-        # To select 10 random row indexs for LOO
+        print("Calculating random data influence using Leave One Out")
+        # To select random row indexs for LOO
         np.random.seed(seed)
 
         selected_indices = np.random.choice(len(self.X), n_random_row, replace=False)
+
+        if n_random_row >= 0.5*len(self.X):
+            print("Computing data influence for most of the data, we recommend using mutiple core to compute the entire LOO data influence by setting n_core > 1")
 
         influences = {}
 
@@ -238,6 +255,22 @@ class DataAnalyzer():
             influences[loo_ix] = influence
             self.data_influences[loo_ix] = influence
 
+        self.influence_method = 'LOO'
+        if stat:
+            self.PrintInfluence()
+
+        return influences
+    
+    def LOOinfluence_parallel(self, stat=True):
+        print("Calculating all data influence using Leave One Out with parallel computing")
+        self.data_influences = np.zeros(len(self.X))
+        indices = range(len(self.X))
+        with Pool(processes=self.n_cores) as pool:
+            train_func = partial(calculate_loo_influence_parallel, X=self.X, y=self.y, model=self.model, metric=self.metric,\
+                                  base_score=self.base_score, X_test=self.X_test, y_test=self.y_test, test_set=self.test_set)
+            influences = list(tqdm(pool.imap(train_func, indices), total=len(indices)))
+
+        self.data_influences = np.array(influences)
         self.influence_method = 'LOO'
         if stat:
             self.PrintInfluence()
