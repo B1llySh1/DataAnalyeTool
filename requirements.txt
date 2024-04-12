@@ -1,5 +1,5 @@
 wheel
-setuptools
+# setuptools
 twine
 notebook
 jupyter_contrib_nbextensions

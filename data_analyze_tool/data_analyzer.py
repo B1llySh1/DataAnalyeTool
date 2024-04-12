@@ -29,7 +29,7 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 
 from multiprocessing import Pool
 from functools import partial
-from model_training import calculate_loo_influence_parallel
+from .model_training import calculate_loo_influence_parallel
 
 class DataAnalyzer():
     """
@@ -78,7 +78,7 @@ class DataAnalyzer():
 
     More help: use .help() function
     """
-    def __init__(self, model, X, y, task, X_test=None, y_test=None, test_set=False, split=0.1, metric=None, seed=42, n_cores=-1):
+    def __init__(self, model, X, y, task, X_test=None, y_test=None, test_set=False, split=0.1, metric=None, seed=42, n_cores=-1, negative_threshold=-0.0):
         self.model = model
         self.X = X
         self.y = y
@@ -95,6 +95,7 @@ class DataAnalyzer():
         self.feature_influences = None
         self.influence_method = None
 
+        self.negative_threshold = negative_threshold
 
         self.supported_tasks = ["regression", "classification", "probabilities"]
         self.task = task
@@ -180,7 +181,7 @@ class DataAnalyzer():
 
             min_feature = self.X.iloc[:, [self.feature_influences.argmin()]]
 
-            if self.feature_influences.min() >= 0:
+            if self.feature_influences.min() >= self.negative_threshold:
                 print("All features have positive impact")
                 return
 
@@ -200,11 +201,11 @@ class DataAnalyzer():
         if self.influence_method:
             print("The data last used:", self.influence_method)
             print(self.data_influences)
-            negative_size = (self.data_influences < 0).sum()
+            negative_size = (self.data_influences < self.negative_threshold).sum()
             print(f"Percentage of negative influence data points in data: {negative_size/self.X.shape[0] *100 :.2f}%")
             
             print("Average influence:", self.data_influences.mean())
-            if self.data_influences.min() >= 0:
+            if self.data_influences.min() >= self.negative_threshold:
                 print("All data have positive influence!")
             else:
                 print("Most negative influence:", self.data_influences.min(), ", index:", self.data_influences.argmin())
@@ -338,7 +339,7 @@ class DataAnalyzer():
         y = self.y
 
 
-        negative_size = (data_influences < 0).sum()
+        negative_size = (data_influences < self.negative_threshold).sum()
 
         print(f"Percentage of negative influence data points in data: {negative_size/X.shape[0] *100 :.2f}%")
 
@@ -346,8 +347,8 @@ class DataAnalyzer():
             print("Negative influence data portion below threshold, returning.")
             return
 
-        negative_data_points = X[data_influences < 0]
-        negative_targets = y[data_influences < 0]
+        negative_data_points = X[data_influences < self.negative_threshold]
+        negative_targets = y[data_influences < self.negative_threshold]
 
         features = X.columns
         n_features = len(features)
@@ -387,6 +388,33 @@ class DataAnalyzer():
             plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust the rectangle in which to fit the subplots
             plt.show()
 
+        if plot:
+            n_cols = int(n_features**0.5)
+            n_rows = (n_features + n_cols - 1) // n_cols
+
+            fig, axes = plt.subplots(n_rows, n_cols, figsize=(12, n_rows * 5))  # Adjust size as needed
+            fig.suptitle('Feature Values vs Influence')
+
+            # Flatten the axes array if necessary (for easy indexing)
+
+            axes = axes.flatten() if n_rows > 1 else [axes]
+
+            # Loop through the features and plot histograms
+            for idx, feature in enumerate(features):
+                ax = axes[idx]
+                ax.scatter(X[feature], self.data_influences, alpha=0.5, color='blue', s=1)
+                ax.set_title(f"Influence of {feature}")
+                ax.set_xlabel(f"Value of {feature}")
+                ax.set_ylabel("Influence Score")
+                ax.grid(True)
+
+            # Hide any unused axes if there are any
+            for ax in axes[len(features):]:
+                ax.set_visible(False)
+
+            plt.tight_layout()
+            plt.show()
+
         print("Testing distribution difference for each feature between negative data points and original dataset.")
         for feature in features:
             # Perform Anderson-Darling test to test if the distribution of that feature is aligned 
@@ -418,11 +446,13 @@ class DataAnalyzer():
         if not self.feature_influences:
             self.Feature_analyze(stat=False)
 
-        negative_columns = X.columns[self.feature_influences < 0]
+        negative_columns = X.columns[self.feature_influences < self.negative_threshold]
 
         if len(negative_columns) == 0:
             print("Looking good! All features have positive impact.")
             return
+        
+        print("Analyzing each negative-influence column and test for preprocess")
 
         negative_features = X[negative_columns]
         

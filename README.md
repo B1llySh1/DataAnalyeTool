@@ -6,7 +6,12 @@ A Python library for analyzing the influence of individual data points and featu
 Install Data Analyzer using pip:
 
 ```bash
-pip install data_analyze_tool
+pip install -i https://test.pypi.org/simple/ DataAnalyzer
+```
+In your python files
+
+```python
+from data_analyze_tool import DataAnalyzer
 ```
 ## Usage
 
@@ -36,7 +41,7 @@ Supported Metrics: ["log_loss"]
 ## Sample
 
 ```python
-from DataAnalyzer import AnalyzeModel
+from data_analyze_tool import DataAnalyzer
 
 # Initialize the model analysis with your model and dataset
 dataAnalyzer = DataAnalyzer(random_forest_pipeline, X, y, task="classification", test_set=True, metric="f1", n_cores=8)
