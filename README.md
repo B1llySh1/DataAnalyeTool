@@ -10,7 +10,7 @@ pip install data_analyze_tool
 ```
 
 ```python
-from data_analyze_tool import AnalyzeModel
+from DataAnalyzer import AnalyzeModel
 
 # Initialize the model analysis with your model and dataset
 myInfluenceModel = AnalyzeModel(my_model, X, y, task="classification", metric="f1")

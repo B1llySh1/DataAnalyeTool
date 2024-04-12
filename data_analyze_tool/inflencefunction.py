@@ -27,44 +27,48 @@ from scipy.stats import skew, ks_2samp # Kolmogorov-Smirnov Test
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, mean_squared_error, mean_absolute_error, r2_score \
                             , precision_recall_fscore_support, log_loss
 
-def calculate_score_base_on_metric(y_pred, y_true, metric):
-    supported = [["MSE", "MAE", "r2"],["accuracy", "precision", "recall", "f1"], ["log_loss"]]
-    if metric == "MSE":
-        return mean_squared_error(y_true, y_pred)
-    elif metric == "MAE":
-        return mean_absolute_error(y_true, y_pred)
-    elif metric == "r2":
-        return r2_score(y_true, y_pred)
-    elif metric == "accuracy":
-        return accuracy_score(y_true, y_pred)
-    elif metric == "precision":
-        precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='macro')
-        return precision
-    elif metric == "recall":
-        precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='macro')
-        return recall
-    elif metric == "f1":
-        precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='macro')
-        return f1
-    elif metric == "log_loss":
-        return log_loss(y_true, y_pred)
-    else:
-        raise KeyError("Unsupported Metric")
-    
-def calculate_influence_base_on_metric(base_score, current_score, metric):
-    # Errors: lower better
-    if metric in ["MSE", "MAE", "log_loss"]:
-        influence = current_score - base_score
-    # Accuracy: higher better
-    elif metric in ["accuracy", "precision", "recall", "f1", "r2"]:
-        influence = base_score - current_score
-    else:
-        raise KeyError("Unsupported Metric")
-    return influence
-        
+class DataAnalyzer():
+    """
+    # A data analyze tool to analyze data given a model.
+    ## Usage:
+    Give the model, X data, y data (target data). And choose the task you are performing (Regression, Classification)
 
-class AnalyzeModel():
-    def __init__(self, model, X, y, task, metric=None):
+    Optional: Provide your own test sets (X_test, y-test), and set test_set=Ture to enable analysis base on test set, or if test_set not provided 
+    the function will automatically split the data into train test base on split (default=0.1)
+
+    Different Metrics are also availbale for different tasks
+
+    ```python
+    # Example
+    dataAnalyzer = DataAnalyzer(random_forest_pipeline, X, y, task="classification", test_set=True, metric="f1")
+    ```
+
+    ## Functions:
+
+    ```python
+    # This will analyze the influence of each feature by excluding each of them.
+    dataAnalyzer.Feature_analyze()
+
+    # This automatically analyze each feature and determine the preprocess that should be done to each feature and return them as a pipeline
+    dataAnalyzer.Auto_preprocess()
+
+    # This automatically analyze each feature and determine the preprocess that should be done to each feature and return them as a pipeline
+    dataAnalyzer.Auto_preprocess()
+
+    # This compute the data influence for the data with the given method
+    dataAnalyzer.CalculateInfluence(method='shapley', num_shuffles=5, threshold=0.98, stat=True)
+
+    # This prints the stat of the influences that are previously computed
+    dataAnalyzer.PrintInfluence()
+
+    # After the data influence have been computed, use this function to analyze the negative impact data points
+    dataAnalyzer.Analyze_data_influence(negative_threshold_percent=0.1)
+
+    ```
+
+    More help: use .help() function
+    """
+    def __init__(self, model, X, y, task, X_test=None, y_test=None, test_set=False, split=0.1, metric=None, seed=42):
         self.model = model
         self.X = X
         self.y = y
@@ -72,6 +76,10 @@ class AnalyzeModel():
         assert X.shape[0] == y.shape[0], "Unmatched X, y size"
 
         self.data_category = "tabular"
+
+        self.test_set = test_set
+        self.X_test = X_test
+        self.y_test = y_test
 
         self.data_influences = np.zeros(len(X))
         self.feature_influences = None
@@ -82,6 +90,12 @@ class AnalyzeModel():
         if task not in self.supported_tasks:
             print("Supported tasks:", self.supported_tasks)
             raise KeyError("Unsupported Task")
+        
+        if test_set and (X_test is None or y_test is None):
+            print(f"No test set provided, auto splitting dataset with test set of {split*100:.2f}% of the data.")
+            self.X, self.X_test, self.y, self.y_test = train_test_split(X, y, test_size=split, random_state=seed)
+        elif test_set:
+            assert self.X_test.shape[0] == self.y_test.shape[0], "Unmatched X test and y test size"
         
         self.supported_metrics = [["MSE", "MAE", "r2"],["accuracy", "precision", "recall", "f1"], ["log_loss"]]
         self.metric = None
@@ -98,17 +112,22 @@ class AnalyzeModel():
 
         self.preprocess_pipeline = None
 
-        model.fit(X, y)
-        y_pred = model.predict(self.X)
-        self.base_score = calculate_score_base_on_metric(y_pred, y, self.metric)
+        
+        self.base_score = self.calculate_score_base_on_metric(self.X, self.y, self.model)
+        
 
-        print(f"Data size, X: {X.shape}, y: {y.shape}")
+        print(f"Train Data size, X: {self.X.shape}, y: {self.y.shape}")
+        if test_set:
+            print(f"Test Data size, X: {self.X_test.shape}, y: {self.y_test.shape}")
+
         print(f"Task: {self.task}, using metric: {self.metric}")
         print(f"Base score: {self.base_score}")
     
     def help(self):
         print("This calculate Influence for data")
         print("Provide data as X and target as y")
+        print(f"Supported tasks: {self.supported_tasks}")
+        print(f"Supported metrics: {self.supported_metrics}")
         print("Supported influence methods: LOO, shapley")
         print("Supported influence metrics: ")
 
@@ -131,14 +150,12 @@ class AnalyzeModel():
 
         for i in tqdm(range(n_features)):
             X_droped = self.X.drop(self.X.columns[i], axis=1)
-
-            # fit model
-            model.fit(X_droped, y)
-            # calculate the accuracy difference as influence
-            y_pred = model.predict(X_droped)
-
-            current_score = calculate_score_base_on_metric(y_pred, y, self.metric)
-            influence = calculate_influence_base_on_metric(self.base_score, current_score, self.metric)
+            if self.test_set:
+                X_test_droped = self.X_test.drop(self.X.columns[i], axis=1)
+                current_score = self.calculate_score_base_on_metric(X_droped, y, model, X_test=X_test_droped)
+            else:
+                current_score = self.calculate_score_base_on_metric(X_droped, y, model)
+            influence = self.calculate_influence_base_on_metric(self.base_score, current_score)
             self.feature_influences[i] = influence
 
         if stat:
@@ -163,17 +180,29 @@ class AnalyzeModel():
             
 
     def PrintInfluence(self):
+        """
+        This function prints out the stats for computed data influences
+        """
         if self.influence_method:
             print("The data last used:", self.influence_method)
             print(self.data_influences)
             print("Average influence:", self.data_influences.mean())
-            print("Worst influence:", self.data_influences.min(), ", index:", self.data_influences.argmin())
-            print("The data with min influence:")
-            print(self.X.iloc[self.data_influences.argmin()])
+            if self.data_influences.min() >= 0:
+                print("All data have positive influence!")
+            else:
+                print("Most negative influence:", self.data_influences.min(), ", index:", self.data_influences.argmin())
+                print("The data with min influence:")
+                print(self.X.iloc[self.data_influences.argmin()])
+            print("Most positive influence:", self.data_influences.max(), ", index:", self.data_influences.argmax())
+            print("The data with max influence:")
+            print(self.X.iloc[self.data_influences.argmax()])
         else:
             print("No analysis has been done")
 
     def CalculateInfluence(self, method='LOO', n_random_row=10, num_shuffles=10, threshold=0.97, seed=1, stat=True):
+        """
+        This function calculate the data influence base on selected methods (LOO, shapley).
+        """
         n_random_row = len(self.X) if n_random_row > len(self.X) or n_random_row < 0 else n_random_row
         if method == 'LOO':
             self.LOOinfluence(n_random_row=n_random_row, seed=seed, stat=stat)
@@ -185,6 +214,9 @@ class AnalyzeModel():
     def LOOinfluence(self, n_random_row, seed=42, stat=True):
         # Clear influences
         self.data_influences = np.zeros(len(self.X))
+        X = self.X
+        y = self.y
+        model = self.model
 
         print("Calculating data influence using Leave One Out")
         # To select 10 random row indexs for LOO
@@ -193,22 +225,15 @@ class AnalyzeModel():
         selected_indices = np.random.choice(len(self.X), n_random_row, replace=False)
 
         influences = {}
-        # Calculate the base accuracy with all data points
-        model = self.model
-        
-
 
         # Exclue each random row to compute the LOO prediction
         for loo_ix in tqdm(selected_indices):
             # split data
-            X_train_loo = self.X.drop(X.index[loo_ix])
-            y_train_loo = np.delete(self.y, loo_ix)
-            # fit model
-            model.fit(X_train_loo, y_train_loo)
-            # calculate the accuracy difference as influence
-            y_pred = model.predict(X)
-            current_score = calculate_score_base_on_metric(y_pred, y, self.metric)
-            influence = calculate_influence_base_on_metric(self.base_score, current_score, self.metric)
+            X_train_loo = X.drop(X.index[loo_ix])
+            y_train_loo = np.delete(y, loo_ix)
+            # calculate the influence
+            current_score = self.calculate_score_base_on_metric(X_train_loo, y_train_loo, model)
+            influence = self.calculate_influence_base_on_metric(self.base_score, current_score)
 
             influences[loo_ix] = influence
             self.data_influences[loo_ix] = influence
@@ -243,8 +268,9 @@ class AnalyzeModel():
 
             prev_performance = 0
             for i in tqdm(range(N)):
-                model.fit(X_perm[:i+1], y_perm[:i+1])
-                performance = accuracy_score(y, model.predict(X))
+                # model.fit(X_perm[:i+1], y_perm[:i+1])
+                performance = self.calculate_score_base_on_metric(X_perm[:i+1], y_perm[:i+1], model)
+                # performance = accuracy_score(y, model.predict(X))
                 marginal_contribution = performance - prev_performance
                 shapley_values[permutation[i]] += marginal_contribution
                 prev_performance = performance
@@ -253,13 +279,17 @@ class AnalyzeModel():
                     break
 
         self.data_influences = shapley_values / num_shuffles
-        self.method = 'shapley'
+        self.influence_method = 'shapley'
         if stat:
             self.PrintInfluence()
 
         return self.data_influences
     
     def Analyze_data_influence(self, plot=True, negative_threshold=0.15):
+        """
+        This function analyze the computed data influence, negative_threshold_percent 
+        is the portion of the negative data we can tolerate compare to the whole data
+        """
         if not self.influence_method:
             print("No data influence computation has been done, returning.")
             return
@@ -271,8 +301,10 @@ class AnalyzeModel():
 
         negative_size = (data_influences < 0).sum()
 
+        print(f"Percentage of negative influence data points in data: {negative_size/X.shape[0] *100 :.2f}%")
+
         if negative_size < negative_threshold*X.shape[0]:
-            print("The dataset contains mostly potive data, returning.")
+            print("Negative influence data portion below threshold, returning.")
             return
 
         negative_data_points = X[data_influences < 0]
@@ -316,12 +348,12 @@ class AnalyzeModel():
             plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust the rectangle in which to fit the subplots
             plt.show()
 
-        print("Testing distribution different amoung negative data points and original dataset.")
+        print("Testing distribution difference for each feature between negative data points and original dataset.")
         for feature in features:
             # Perform Anderson-Darling test to test if the distribution of that feature is aligned 
             ks_stat, ks_pvalue = ks_2samp(X[feature].dropna(), negative_data_points[feature].dropna(), method='exact')
 
-            # print(f"Feature: {feature}, KS Statistic: {ks_stat}, P-value: {ks_pvalue}")
+            print(f"Feature in negative data points: {feature}, KS Statistic: {ks_stat}, P-value: {ks_pvalue}")
 
             if ks_pvalue < 0.1:
                 unbalanced_feature = negative_data_points[feature]
@@ -347,7 +379,13 @@ class AnalyzeModel():
         if not self.feature_influences:
             self.Feature_analyze(stat=False)
 
-        negative_features = X[X.columns[self.feature_influences < 0]]
+        negative_columns = X.columns[self.feature_influences < 0]
+
+        if len(negative_columns) == 0:
+            print("Looking good! All features have positive impact.")
+            return
+
+        negative_features = X[negative_columns]
         
         numeric_features = negative_features.select_dtypes(include=['int', 'float']).columns
 
@@ -369,7 +407,7 @@ class AnalyzeModel():
 
             # None of the method works try removing
             if current_steps == preprocessing_steps:
-                print(f"None of the preprocess works for this column: {feature}. Consier removing it or examine it")
+                print(f"None of the preprocess works for this column: {feature}. Please examine it")
                 
 
         # Categorical Feature Preprocessing
@@ -385,19 +423,19 @@ class AnalyzeModel():
 
             # None of the method works try removing
             if current_steps == preprocessing_steps:
-                print(f"None of the preprocess works for this column: {feature}. Consier removing it or examine it")
+                print(f"None of the preprocess works for this column: {feature}. Please examine it")
 
         # Create the column transformer and pipeline
         preprocessor = ColumnTransformer(transformers=preprocessing_steps, remainder='passthrough')
         full_pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('model', clone(model))])
 
         # Fit the pipeline
-        full_pipeline.fit(X, y)
+        # full_pipeline.fit(X, y)
 
-        y_pred = full_pipeline.predict(X)
-        current_score = calculate_score_base_on_metric(y_pred, y, self.metric)
+        # y_pred = full_pipeline.predict(X)
+        current_score = self.calculate_score_base_on_metric(X, y, full_pipeline)
 
-        preprocess_influence = -calculate_influence_base_on_metric(self.base_score, current_score, self.metric)
+        preprocess_influence = -self.calculate_influence_base_on_metric(self.base_score, current_score)
 
         print(f"Preprocess pipeline: {preprocessing_steps}")
         print(f"New score {current_score}, with improvement {preprocess_influence}")
@@ -411,10 +449,10 @@ class AnalyzeModel():
         preprocessor = ColumnTransformer(transformers=preprocessing_steps, remainder='passthrough')
         temp_pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('model', clone(self.model))])
         # Fit the pipeline
-        temp_pipeline.fit(X, y)
-        y_pred = temp_pipeline.predict(X)
-        current_score = calculate_score_base_on_metric(y_pred, y, self.metric)
-        preprocess_influence = -calculate_influence_base_on_metric(current_base_score, current_score, self.metric)
+        # temp_pipeline.fit(self.X, self.y)
+        # y_pred = temp_pipeline.predict(self.X)
+        current_score = self.calculate_score_base_on_metric(self.X, self.y, temp_pipeline)
+        preprocess_influence = -self.calculate_influence_base_on_metric(current_base_score, current_score)
         print(f"This preprocess has influence: {preprocess_influence}")
         if preprocess_influence > 0:
             print("Performance Improved, saved this preprocess")
@@ -423,3 +461,49 @@ class AnalyzeModel():
             print("Preprocess dones't work")
             preprocessing_steps.pop()
             return current_base_score
+        
+    def calculate_score_base_on_metric(self, X, y, model, X_test=None, y_test=None):
+        model.fit(X, y)
+        X_test = X_test if X_test is not None else self.X_test
+        y_test = y_test if y_test is not None else self.y_test
+        if self.test_set:
+            y_pred = model.predict(X_test)
+            y_true = y_test
+        else:
+            y_pred = model.predict(X)
+            y_true = y
+        metric = self.metric
+        supported = [["MSE", "MAE", "r2"],["accuracy", "precision", "recall", "f1"], ["log_loss"]]
+        if metric == "MSE":
+            return mean_squared_error(y_true, y_pred)
+        elif metric == "MAE":
+            return mean_absolute_error(y_true, y_pred)
+        elif metric == "r2":
+            return r2_score(y_true, y_pred)
+        elif metric == "accuracy":
+            return accuracy_score(y_true, y_pred)
+        elif metric == "precision":
+            precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='macro')
+            return precision
+        elif metric == "recall":
+            precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='macro')
+            return recall
+        elif metric == "f1":
+            precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='macro')
+            return f1
+        elif metric == "log_loss":
+            return log_loss(y_true, y_pred)
+        else:
+            raise KeyError("Unsupported Metric")
+    
+    def calculate_influence_base_on_metric(self, base_score, current_score):
+        # Errors: lower better
+        metric = self.metric
+        if metric in ["MSE", "MAE", "log_loss"]:
+            influence = current_score - base_score
+        # Accuracy: higher better
+        elif metric in ["accuracy", "precision", "recall", "f1", "r2"]:
+            influence = base_score - current_score
+        else:
+            raise KeyError("Unsupported Metric")
+        return influence
