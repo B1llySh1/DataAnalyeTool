@@ -58,9 +58,6 @@ class DataAnalyzer():
     # This automatically analyze each feature and determine the preprocess that should be done to each feature and return them as a pipeline
     dataAnalyzer.Auto_preprocess()
 
-    # This automatically analyze each feature and determine the preprocess that should be done to each feature and return them as a pipeline
-    dataAnalyzer.Auto_preprocess()
-
     # This compute the data influence for the data with the given method
     dataAnalyzer.CalculateInfluence(method='shapley', num_shuffles=5, threshold=0.98, stat=True)
 
