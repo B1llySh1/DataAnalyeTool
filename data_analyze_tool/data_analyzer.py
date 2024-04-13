@@ -524,7 +524,7 @@ class DataAnalyzer():
             print("Performance Improved, saved this preprocess")
             return current_score
         else:
-            print("Preprocess dones't work")
+            print("Preprocess does't work")
             preprocessing_steps.pop()
             return current_base_score
         

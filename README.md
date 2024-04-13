@@ -18,7 +18,7 @@ from data_analyze_tool import DataAnalyzer
 Give the model, X data, y data (target data). And choose the task you are performing (Regression, Classification)
 
 ### Options: 
-Provide your own test sets (X_test, y-test), and set test_set=Ture to enable analysis base on test set, or if test_set not provided the function will automatically split the data into train test base on split (default=0.1)
+Provide your own test sets (X_test, y-test), and set test_set=True to enable analysis base on test set, or if test_set not provided the function will automatically split the data into train test base on split (default=0.1)
 
 if n_cores set to > 0, then we can utilze muti threading for computing LOO model retraining. This will make computing LOO data influence on the whole data feasible
 
@@ -85,23 +85,23 @@ dataAnalyzer.auto_preprocess()
 ```
 Analyzing each features
 100%|██████████| 16/16 [00:03<00:00,  4.45it/s]
-None of the preprocess works for this column: Gender. Consier removing it or examine it
+None of the preprocess works for this column: Gender. Consider removing it or examine it
 Trying scaler on column: NCP
 This preprocess has influence: -1.8044515586956855e-05
-Preprocess dones't work
-None of the preprocess works for this column: NCP. Consier removing it or examine it
+Preprocess does't work
+None of the preprocess works for this column: NCP. Consider removing it or examine it
 Trying scaler on column: CAEC
 This preprocess has influence: 0.000987806708002581
 Performance Improved, saved this preprocess
-None of the preprocess works for this column: CAEC. Consier removing it or examine it
+None of the preprocess works for this column: CAEC. Consider removing it or examine it
 Trying scaler on column: SCC
 This preprocess has influence: -0.0004951958705641246
-Preprocess dones't work
-None of the preprocess works for this column: SCC. Consier removing it or examine it
+Preprocess does't work
+None of the preprocess works for this column: SCC. Consider removing it or examine it
 Trying scaler on column: MTRANS
 This preprocess has influence: -0.0
-Preprocess dones't work
-None of the preprocess works for this column: MTRANS. Consier removing it or examine it
+Preprocess does't work
+None of the preprocess works for this column: MTRANS. Consider removing it or examine it
 Preprocess pipeline: [('scaler_CAEC', PowerTransformer(), ['CAEC'])]
 New score 1.0, with improvement 0.000987806708002581
 ```
